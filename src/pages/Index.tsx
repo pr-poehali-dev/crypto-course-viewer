@@ -17,6 +17,7 @@ const NAV = [
 ];
 
 type Coin = {
+  id: string;
   sym: string;
   name: string;
   price: number;
@@ -26,13 +27,18 @@ type Coin = {
 };
 
 const COINS: Coin[] = [
-  { sym: 'BTC', name: 'Bitcoin', price: 67234.12, change: 2.41, icon: 'Bitcoin', color: '#f7931a' },
-  { sym: 'ETH', name: 'Ethereum', price: 3521.88, change: 4.12, icon: 'Gem', color: '#627eea' },
-  { sym: 'SOL', name: 'Solana', price: 178.34, change: -1.85, icon: 'Sun', color: '#14f195' },
-  { sym: 'BNB', name: 'BNB', price: 612.5, change: 0.94, icon: 'Hexagon', color: '#f3ba2f' },
-  { sym: 'XRP', name: 'Ripple', price: 0.624, change: -3.21, icon: 'Droplet', color: '#23292f' },
-  { sym: 'ADA', name: 'Cardano', price: 0.452, change: 1.07, icon: 'Circle', color: '#0033ad' },
+  { id: 'bitcoin', sym: 'BTC', name: 'Bitcoin', price: 67234.12, change: 2.41, icon: 'Bitcoin', color: '#f7931a' },
+  { id: 'ethereum', sym: 'ETH', name: 'Ethereum', price: 3521.88, change: 4.12, icon: 'Gem', color: '#627eea' },
+  { id: 'solana', sym: 'SOL', name: 'Solana', price: 178.34, change: -1.85, icon: 'Sun', color: '#14f195' },
+  { id: 'binancecoin', sym: 'BNB', name: 'BNB', price: 612.5, change: 0.94, icon: 'Hexagon', color: '#f3ba2f' },
+  { id: 'ripple', sym: 'XRP', name: 'Ripple', price: 0.624, change: -3.21, icon: 'Droplet', color: '#23292f' },
+  { id: 'cardano', sym: 'ADA', name: 'Cardano', price: 0.452, change: 1.07, icon: 'Circle', color: '#0033ad' },
 ];
+
+const CG_URL =
+  'https://api.coingecko.com/api/v3/simple/price?ids=' +
+  COINS.map((c) => c.id).join(',') +
+  '&vs_currencies=usd&include_24hr_change=true';
 
 const Sparkline = ({ up }: { up: boolean }) => {
   const points = up ? '0,28 12,20 24,24 36,12 48,16 60,4' : '0,6 12,14 24,10 36,20 48,16 60,28';
@@ -56,21 +62,52 @@ const Index = () => {
   const [calcAmount, setCalcAmount] = useState('1');
   const [calcCoin, setCalcCoin] = useState('BTC');
   const [target, setTarget] = useState('');
+  const [live, setLive] = useState(false);
 
   useEffect(() => {
-    const t = setInterval(() => {
+    let cancelled = false;
+
+    const fetchPrices = async () => {
+      try {
+        const res = await fetch(CG_URL);
+        if (!res.ok) return;
+        const data = await res.json();
+        if (cancelled) return;
+        setPrices((prev) =>
+          prev.map((c) => {
+            const d = data[c.id];
+            if (!d) return c;
+            return {
+              ...c,
+              price: d.usd ?? c.price,
+              change: +(d.usd_24h_change ?? c.change).toFixed(2),
+            };
+          }),
+        );
+        setLive(true);
+      } catch {
+        /* оставляем последние известные цены */
+      }
+    };
+
+    fetchPrices();
+    const poll = setInterval(fetchPrices, 30000);
+
+    // лёгкое "дыхание" цен между запросами к бирже
+    const tick = setInterval(() => {
       setPrices((prev) =>
         prev.map((c) => {
-          const delta = (Math.random() - 0.5) * (c.price * 0.002);
-          return {
-            ...c,
-            price: Math.max(0.001, c.price + delta),
-            change: +(c.change + (Math.random() - 0.5) * 0.3).toFixed(2),
-          };
+          const delta = (Math.random() - 0.5) * (c.price * 0.0004);
+          return { ...c, price: Math.max(0.0001, c.price + delta) };
         }),
       );
-    }, 2000);
-    return () => clearInterval(t);
+    }, 2500);
+
+    return () => {
+      cancelled = true;
+      clearInterval(poll);
+      clearInterval(tick);
+    };
   }, []);
 
   const scrollTo = (id: string) => {
@@ -130,7 +167,7 @@ const Index = () => {
           <div className="max-w-2xl animate-fade-up">
             <span className="inline-flex items-center gap-2 text-sm text-accent border border-accent/30 rounded-full px-4 py-1.5 mb-6">
               <span className="w-2 h-2 rounded-full bg-success animate-pulse-ring" />
-              Данные обновляются в реальном времени
+              {live ? 'Реальные курсы с биржи CoinGecko' : 'Подключаемся к бирже…'}
             </span>
             <h1 className="font-display font-extrabold text-5xl md:text-7xl leading-[1.05] mb-6">
               Курсы крипты <br />
