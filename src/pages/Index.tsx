@@ -3,6 +3,45 @@ import Icon from '@/components/ui/icon';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 
+type NewsItem = {
+  title: string;
+  link: string;
+  pubDate: string;
+  tag: string;
+};
+
+const NEWS_URL =
+  'https://api.rss2json.com/v1/api.json?rss_url=https%3A%2F%2Fwww.coindesk.com%2Farc%2Foutboundfeeds%2Frss%2F&count=6';
+
+const NEWS_ICONS = ['TrendingUp', 'Zap', 'Scale', 'Globe', 'BarChart2', 'Newspaper'];
+
+function timeAgo(dateStr: string): string {
+  const diff = Date.now() - new Date(dateStr).getTime();
+  const m = Math.floor(diff / 60000);
+  if (m < 1) return 'только что';
+  if (m < 60) return `${m} мин назад`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h} ч назад`;
+  return `${Math.floor(h / 24)} д назад`;
+}
+
+function extractTag(title: string): string {
+  const tags: Record<string, string> = {
+    bitcoin: 'Bitcoin', btc: 'Bitcoin',
+    ethereum: 'Ethereum', eth: 'Ethereum',
+    solana: 'Solana', sol: 'Solana',
+    ripple: 'Ripple', xrp: 'Ripple',
+    sec: 'Регуляция', regulation: 'Регуляция', law: 'Регуляция',
+    market: 'Рынок', price: 'Рынок', trading: 'Рынок',
+    defi: 'DeFi', nft: 'NFT',
+  };
+  const lower = title.toLowerCase();
+  for (const [key, val] of Object.entries(tags)) {
+    if (lower.includes(key)) return val;
+  }
+  return 'Крипто';
+}
+
 const HERO_IMG =
   'https://cdn.poehali.dev/projects/81417db6-5267-41a3-b95e-3a8e8cec9192/files/81c6b419-b9bb-46d5-badf-3e5ca05fe089.jpg';
 
@@ -113,6 +152,8 @@ const Index = () => {
   const [alerts, setAlerts] = useState<Alert[]>([]);
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [showAlerts, setShowAlerts] = useState(false);
+  const [news, setNews] = useState<NewsItem[]>([]);
+  const [newsLoading, setNewsLoading] = useState(true);
   const pricesRef = useRef(prices);
   pricesRef.current = prices;
 
@@ -194,6 +235,33 @@ const Index = () => {
       return updated;
     });
   }, [prices]);
+
+  useEffect(() => {
+    const fetchNews = async () => {
+      setNewsLoading(true);
+      try {
+        const res = await fetch(NEWS_URL);
+        const data = await res.json();
+        if (data.status === 'ok' && Array.isArray(data.items)) {
+          setNews(
+            data.items.slice(0, 6).map((item: { title: string; link: string; pubDate: string }) => ({
+              title: item.title,
+              link: item.link,
+              pubDate: item.pubDate,
+              tag: extractTag(item.title),
+            })),
+          );
+        }
+      } catch {
+        /* оставляем пустой список */
+      } finally {
+        setNewsLoading(false);
+      }
+    };
+    fetchNews();
+    const t = setInterval(fetchNews, 5 * 60 * 1000);
+    return () => clearInterval(t);
+  }, []);
 
   const scrollTo = (id: string) => {
     setActive(id);
@@ -421,29 +489,47 @@ const Index = () => {
 
       {/* NEWS */}
       <Section id="news" eyebrow="Новости" title="Что происходит на рынке">
-        <div className="grid md:grid-cols-3 gap-5">
-          {[
-            { tag: 'Bitcoin', title: 'BTC обновил локальный максимум на фоне притока капитала', time: '12 мин назад', icon: 'TrendingUp' },
-            { tag: 'Ethereum', title: 'Обновление сети снизило комиссии на 30%', time: '1 час назад', icon: 'Zap' },
-            { tag: 'Регуляция', title: 'Новые правила для бирж вступят в силу осенью', time: '3 часа назад', icon: 'Scale' },
-          ].map((n, i) => (
-            <article
-              key={i}
-              style={{ animationDelay: `${i * 80}ms` }}
-              className="animate-fade-up glass rounded-2xl p-6 hover:-translate-y-1 transition-transform cursor-pointer"
-            >
-              <span className="grid place-items-center w-10 h-10 rounded-xl bg-primary/15 mb-4">
-                <Icon name={n.icon} size={20} className="text-primary" />
-              </span>
-              <div className="text-xs text-accent mb-2">{n.tag}</div>
-              <h3 className="font-display font-semibold leading-snug mb-4">{n.title}</h3>
-              <div className="text-xs text-muted-foreground flex items-center gap-1">
-                <Icon name="Clock" size={13} />
-                {n.time}
+        {newsLoading ? (
+          <div className="grid md:grid-cols-3 gap-5">
+            {[0, 1, 2].map((i) => (
+              <div key={i} className="glass rounded-2xl p-6 animate-pulse">
+                <div className="w-10 h-10 rounded-xl bg-secondary mb-4" />
+                <div className="h-3 w-16 rounded bg-secondary mb-3" />
+                <div className="h-4 w-full rounded bg-secondary mb-2" />
+                <div className="h-4 w-3/4 rounded bg-secondary mb-4" />
+                <div className="h-3 w-24 rounded bg-secondary" />
               </div>
-            </article>
-          ))}
-        </div>
+            ))}
+          </div>
+        ) : news.length > 0 ? (
+          <div className="grid md:grid-cols-3 gap-5">
+            {news.map((n, i) => (
+              <a
+                key={i}
+                href={n.link}
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{ animationDelay: `${i * 80}ms` }}
+                className="animate-fade-up glass rounded-2xl p-6 hover:-translate-y-1 transition-transform cursor-pointer block"
+              >
+                <span className="grid place-items-center w-10 h-10 rounded-xl bg-primary/15 mb-4">
+                  <Icon name={NEWS_ICONS[i % NEWS_ICONS.length]} size={20} className="text-primary" fallback="Newspaper" />
+                </span>
+                <div className="text-xs text-accent mb-2">{n.tag}</div>
+                <h3 className="font-display font-semibold leading-snug mb-4 line-clamp-3">{n.title}</h3>
+                <div className="text-xs text-muted-foreground flex items-center gap-1">
+                  <Icon name="Clock" size={13} />
+                  {timeAgo(n.pubDate)}
+                </div>
+              </a>
+            ))}
+          </div>
+        ) : (
+          <div className="glass rounded-2xl p-10 text-center text-muted-foreground">
+            <Icon name="Newspaper" size={32} className="mx-auto mb-3 opacity-40" />
+            Не удалось загрузить новости. Попробуйте позже.
+          </div>
+        )}
       </Section>
 
       {/* ANALYSIS */}
