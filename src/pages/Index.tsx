@@ -133,6 +133,59 @@ type CoinDetail = {
   rank: number;
 };
 
+const ShareButton = ({ coin }: { coin: Coin }) => {
+  const [copied, setCopied] = useState(false);
+  const copy = async () => {
+    const url = `${window.location.origin}${window.location.pathname}?coin=${coin.sym.toLowerCase()}`;
+    try {
+      await navigator.clipboard.writeText(url);
+    } catch {
+      const ta = document.createElement('textarea');
+      ta.value = url;
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      document.body.removeChild(ta);
+    }
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+  return (
+    <button
+      onClick={copy}
+      className={`flex items-center justify-center gap-2 h-11 rounded-xl text-sm font-semibold transition-all border ${
+        copied
+          ? 'bg-success/15 border-success/40 text-success'
+          : 'bg-secondary/50 border-border text-muted-foreground hover:text-foreground hover:bg-secondary'
+      }`}
+    >
+      <Icon name={copied ? 'Check' : 'Link'} size={16} />
+      {copied ? 'Скопировано!' : 'Копировать'}
+    </button>
+  );
+};
+
+const TelegramButton = ({ coin }: { coin: Coin }) => {
+  const share = () => {
+    const url = `${window.location.origin}${window.location.pathname}?coin=${coin.sym.toLowerCase()}`;
+    const text = `📈 ${coin.name} (${coin.sym}) — $${coin.price.toLocaleString('en-US', { maximumFractionDigits: 2 })}\nОтслеживай криптовалюты на CryptoPulse`;
+    window.open(
+      `https://t.me/share/url?url=${encodeURIComponent(url)}&text=${encodeURIComponent(text)}`,
+      '_blank',
+      'noopener,noreferrer',
+    );
+  };
+  return (
+    <button
+      onClick={share}
+      className="flex items-center justify-center gap-2 h-11 rounded-xl text-sm font-semibold bg-[#2AABEE]/15 border border-[#2AABEE]/30 text-[#2AABEE] hover:bg-[#2AABEE]/25 transition-colors"
+    >
+      <Icon name="Send" size={16} />
+      Telegram
+    </button>
+  );
+};
+
 const PERIODS = [
   { label: '7Д', days: 7 },
   { label: '30Д', days: 30 },
@@ -337,7 +390,7 @@ const CoinModal = ({
         </div>
 
         {/* Actions */}
-        <div className="px-6 pb-6">
+        <div className="px-6 pb-6 flex flex-col gap-3">
           <Button
             onClick={() => { onAlert(coin.sym); onClose(); }}
             className="w-full h-11 rounded-xl bg-gradient-to-r from-primary to-accent text-background font-semibold hover:opacity-90"
@@ -345,6 +398,10 @@ const CoinModal = ({
             <Icon name="BellRing" size={17} />
             Установить алерт для {coin.sym}
           </Button>
+          <div className="grid grid-cols-2 gap-3">
+            <ShareButton coin={coin} />
+            <TelegramButton coin={coin} />
+          </div>
         </div>
       </div>
     </div>
