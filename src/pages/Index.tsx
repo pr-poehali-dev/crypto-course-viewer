@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import Icon from '@/components/ui/icon';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -24,6 +24,24 @@ type Coin = {
   change: number;
   icon: string;
   color: string;
+};
+
+type Alert = {
+  id: string;
+  sym: string;
+  name: string;
+  target: number;
+  direction: 'above' | 'below';
+  triggered: boolean;
+};
+
+type Toast = {
+  id: string;
+  sym: string;
+  name: string;
+  price: number;
+  target: number;
+  direction: 'above' | 'below';
 };
 
 const COINS: Coin[] = [
@@ -56,6 +74,35 @@ const Sparkline = ({ up }: { up: boolean }) => {
   );
 };
 
+const ToastNotification = ({ toast, onClose }: { toast: Toast; onClose: () => void }) => {
+  useEffect(() => {
+    const t = setTimeout(onClose, 7000);
+    return () => clearTimeout(t);
+  }, [onClose]);
+
+  const up = toast.direction === 'above';
+  return (
+    <div className="animate-fade-up flex items-start gap-3 glass rounded-2xl p-4 w-80 shadow-2xl border border-border">
+      <span className={`grid place-items-center w-10 h-10 rounded-xl flex-shrink-0 ${up ? 'bg-success/15' : 'bg-destructive/15'}`}>
+        <Icon name={up ? 'TrendingUp' : 'TrendingDown'} size={20} className={up ? 'text-success' : 'text-destructive'} />
+      </span>
+      <div className="flex-1 min-w-0">
+        <div className="font-display font-semibold text-sm mb-0.5">
+          {toast.sym} {up ? 'достиг цели ▲' : 'упал до цели ▼'}
+        </div>
+        <div className="text-xs text-muted-foreground">
+          Цена <span className="text-foreground font-medium">${toast.price.toLocaleString('ru-RU', { maximumFractionDigits: 2 })}</span>{' '}
+          {up ? 'выше' : 'ниже'} цели{' '}
+          <span className="text-foreground font-medium">${toast.target.toLocaleString('ru-RU')}</span>
+        </div>
+      </div>
+      <button onClick={onClose} className="text-muted-foreground hover:text-foreground transition-colors flex-shrink-0">
+        <Icon name="X" size={16} />
+      </button>
+    </div>
+  );
+};
+
 const Index = () => {
   const [prices, setPrices] = useState(COINS);
   const [active, setActive] = useState('home');
@@ -63,6 +110,11 @@ const Index = () => {
   const [calcCoin, setCalcCoin] = useState('BTC');
   const [target, setTarget] = useState('');
   const [live, setLive] = useState(false);
+  const [alerts, setAlerts] = useState<Alert[]>([]);
+  const [toasts, setToasts] = useState<Toast[]>([]);
+  const [showAlerts, setShowAlerts] = useState(false);
+  const pricesRef = useRef(prices);
+  pricesRef.current = prices;
 
   useEffect(() => {
     let cancelled = false;
@@ -93,7 +145,6 @@ const Index = () => {
     fetchPrices();
     const poll = setInterval(fetchPrices, 30000);
 
-    // лёгкое "дыхание" цен между запросами к бирже
     const tick = setInterval(() => {
       setPrices((prev) =>
         prev.map((c) => {
@@ -110,6 +161,40 @@ const Index = () => {
     };
   }, []);
 
+  // Проверяем алерты при каждом обновлении цен
+  useEffect(() => {
+    setAlerts((prev) => {
+      const fired: Alert[] = [];
+      const updated = prev.map((a) => {
+        if (a.triggered) return a;
+        const coin = prices.find((c) => c.sym === a.sym);
+        if (!coin) return a;
+        const hit =
+          (a.direction === 'above' && coin.price >= a.target) ||
+          (a.direction === 'below' && coin.price <= a.target);
+        if (hit) fired.push(a);
+        return hit ? { ...a, triggered: true } : a;
+      });
+      if (fired.length > 0) {
+        setToasts((t) => [
+          ...t,
+          ...fired.map((a) => {
+            const coin = prices.find((c) => c.sym === a.sym)!;
+            return {
+              id: Math.random().toString(36).slice(2),
+              sym: a.sym,
+              name: a.name,
+              price: coin.price,
+              target: a.target,
+              direction: a.direction,
+            };
+          }),
+        ]);
+      }
+      return updated;
+    });
+  }, [prices]);
+
   const scrollTo = (id: string) => {
     setActive(id);
     document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -120,13 +205,81 @@ const Index = () => {
       ? n.toLocaleString('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
       : n.toFixed(3);
 
+  const addAlert = () => {
+    const val = parseFloat(target);
+    if (!val || isNaN(val)) return;
+    const coin = prices.find((c) => c.sym === calcCoin)!;
+    const direction: 'above' | 'below' = val >= coin.price ? 'above' : 'below';
+    setAlerts((prev) => [
+      ...prev,
+      {
+        id: Math.random().toString(36).slice(2),
+        sym: coin.sym,
+        name: coin.name,
+        target: val,
+        direction,
+        triggered: false,
+      },
+    ]);
+    setTarget('');
+  };
+
+  const removeAlert = (id: string) => setAlerts((prev) => prev.filter((a) => a.id !== id));
+  const removeToast = (id: string) => setToasts((prev) => prev.filter((t) => t.id !== id));
+
   const selectedCoin = prices.find((c) => c.sym === calcCoin)!;
   const calcResult = (parseFloat(calcAmount || '0') * selectedCoin.price).toLocaleString('ru-RU', {
     maximumFractionDigits: 2,
   });
+  const activeAlerts = alerts.filter((a) => !a.triggered);
 
   return (
     <div className="min-h-screen text-foreground">
+      {/* TOAST CONTAINER */}
+      <div className="fixed bottom-6 right-6 z-[100] flex flex-col gap-3 pointer-events-none">
+        {toasts.map((t) => (
+          <div key={t.id} className="pointer-events-auto">
+            <ToastNotification toast={t} onClose={() => removeToast(t.id)} />
+          </div>
+        ))}
+      </div>
+
+      {/* ALERTS PANEL */}
+      {showAlerts && (
+        <div className="fixed inset-0 z-[90] flex items-start justify-end pt-20 pr-4" onClick={() => setShowAlerts(false)}>
+          <div className="glass rounded-2xl p-5 w-80 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-display font-semibold">Активные алерты</h3>
+              <button onClick={() => setShowAlerts(false)} className="text-muted-foreground hover:text-foreground">
+                <Icon name="X" size={18} />
+              </button>
+            </div>
+            {activeAlerts.length === 0 ? (
+              <div className="text-sm text-muted-foreground text-center py-6">
+                <Icon name="BellOff" size={28} className="mx-auto mb-2 opacity-40" />
+                Нет активных алертов
+              </div>
+            ) : (
+              <div className="flex flex-col gap-2">
+                {activeAlerts.map((a) => (
+                  <div key={a.id} className="flex items-center justify-between rounded-xl bg-secondary/50 px-4 py-3">
+                    <div>
+                      <div className="font-medium text-sm">{a.sym}</div>
+                      <div className="text-xs text-muted-foreground">
+                        {a.direction === 'above' ? '▲ выше' : '▼ ниже'} ${a.target.toLocaleString('ru-RU')}
+                      </div>
+                    </div>
+                    <button onClick={() => removeAlert(a.id)} className="text-muted-foreground hover:text-destructive transition-colors">
+                      <Icon name="Trash2" size={15} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* NAV */}
       <header className="fixed top-0 inset-x-0 z-50 glass">
         <div className="container flex items-center justify-between h-16">
@@ -149,9 +302,17 @@ const Index = () => {
               </button>
             ))}
           </nav>
-          <Button className="rounded-xl bg-gradient-to-r from-primary to-accent text-background font-semibold hover:opacity-90">
+          <Button
+            onClick={() => setShowAlerts((v) => !v)}
+            className="relative rounded-xl bg-gradient-to-r from-primary to-accent text-background font-semibold hover:opacity-90"
+          >
             <Icon name="Bell" size={16} />
             Уведомления
+            {activeAlerts.length > 0 && (
+              <span className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-destructive text-white text-[10px] font-bold grid place-items-center">
+                {activeAlerts.length}
+              </span>
+            )}
           </Button>
         </div>
       </header>
@@ -375,21 +536,52 @@ const Index = () => {
           </div>
 
           <div className="mt-6 pt-6 border-t border-border">
-            <label className="text-sm text-muted-foreground mb-2 block flex items-center gap-2">
+            <label className="text-sm text-muted-foreground mb-2 flex items-center gap-2">
               <Icon name="BellRing" size={15} className="text-accent" />
-              Уведомить при достижении цены ({calcCoin})
+              Уведомить при достижении цены ({calcCoin} = ${fmt(selectedCoin.price)})
             </label>
-            <div className="flex gap-3">
+            <div className="flex gap-3 mb-3">
               <Input
                 value={target}
                 placeholder="Например, 70000"
                 onChange={(e) => setTarget(e.target.value.replace(/[^0-9.]/g, ''))}
+                onKeyDown={(e) => e.key === 'Enter' && addAlert()}
                 className="h-12 rounded-xl bg-secondary/50 border-border"
               />
-              <Button className="h-12 rounded-xl bg-gradient-to-r from-primary to-accent text-background font-semibold px-6 hover:opacity-90">
+              <Button
+                onClick={addAlert}
+                disabled={!target}
+                className="h-12 rounded-xl bg-gradient-to-r from-primary to-accent text-background font-semibold px-6 hover:opacity-90 disabled:opacity-40"
+              >
                 Установить
               </Button>
             </div>
+            {target && !isNaN(parseFloat(target)) && (
+              <p className="text-xs text-muted-foreground">
+                Сработает, когда цена{' '}
+                {parseFloat(target) >= selectedCoin.price ? (
+                  <span className="text-success">вырастет до ${parseFloat(target).toLocaleString('ru-RU')}</span>
+                ) : (
+                  <span className="text-destructive">упадёт до ${parseFloat(target).toLocaleString('ru-RU')}</span>
+                )}
+              </p>
+            )}
+            {activeAlerts.length > 0 && (
+              <div className="mt-4 flex flex-col gap-2">
+                <div className="text-xs text-muted-foreground font-medium">Ваши алерты:</div>
+                {activeAlerts.map((a) => (
+                  <div key={a.id} className="flex items-center justify-between rounded-xl bg-secondary/40 px-4 py-2.5 text-sm">
+                    <span className="font-medium">{a.sym}</span>
+                    <span className={`text-xs ${a.direction === 'above' ? 'text-success' : 'text-destructive'}`}>
+                      {a.direction === 'above' ? '▲ выше' : '▼ ниже'} ${a.target.toLocaleString('ru-RU')}
+                    </span>
+                    <button onClick={() => removeAlert(a.id)} className="text-muted-foreground hover:text-destructive transition-colors ml-2">
+                      <Icon name="X" size={14} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       </Section>
@@ -424,7 +616,7 @@ const Index = () => {
             <Icon name="Activity" size={18} className="text-accent" />
             CryptoPulse
           </div>
-          <span>© 2026 CryptoPulse. Данные демонстрационные.</span>
+          <span>© 2026 CryptoPulse. Данные с CoinGecko.</span>
         </div>
       </footer>
     </div>
