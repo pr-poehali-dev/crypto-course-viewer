@@ -133,6 +133,12 @@ type CoinDetail = {
   rank: number;
 };
 
+const PERIODS = [
+  { label: '7Д', days: 7 },
+  { label: '30Д', days: 30 },
+  { label: '1Г', days: 365 },
+];
+
 const CoinModal = ({
   detail,
   onClose,
@@ -142,26 +148,56 @@ const CoinModal = ({
   onClose: () => void;
   onAlert: (sym: string) => void;
 }) => {
-  const { coin, history, marketCap, volume24h, high24h, low24h, ath, rank } = detail;
-  const up = coin.change >= 0;
-  const min = Math.min(...history);
-  const max = Math.max(...history);
-  const W = 480, H = 120, PAD = 8;
-  const pts = history
-    .map((v, i) => {
-      const x = PAD + (i / (history.length - 1)) * (W - PAD * 2);
-      const y = PAD + ((max - v) / (max - min || 1)) * (H - PAD * 2);
-      return `${x},${y}`;
-    })
-    .join(' ');
-  const fill = history
-    .map((v, i) => {
-      const x = PAD + (i / (history.length - 1)) * (W - PAD * 2);
-      const y = PAD + ((max - v) / (max - min || 1)) * (H - PAD * 2);
-      return `${x},${y}`;
-    })
-    .concat([`${W - PAD},${H}`, `${PAD},${H}`])
-    .join(' ');
+  const { coin, marketCap, volume24h, high24h, low24h, ath, rank } = detail;
+  const [period, setPeriod] = useState(7);
+  const [history, setHistory] = useState<number[]>(detail.history);
+  const [chartLoading, setChartLoading] = useState(false);
+
+  const up = history.length > 1
+    ? history[history.length - 1] >= history[0]
+    : coin.change >= 0;
+
+  const min = history.length > 0 ? Math.min(...history) : 0;
+  const max = history.length > 0 ? Math.max(...history) : 1;
+  const W = 480, H = 130, PAD = 8;
+
+  const toPoint = (v: number, i: number, arr: number[]) => {
+    const x = PAD + (i / (arr.length - 1 || 1)) * (W - PAD * 2);
+    const y = PAD + ((max - v) / (max - min || 1)) * (H - PAD * 2);
+    return `${x},${y}`;
+  };
+  const pts = history.map((v, i, a) => toPoint(v, i, a)).join(' ');
+  const fillPts = [
+    ...history.map((v, i, a) => toPoint(v, i, a)),
+    `${W - PAD},${H}`,
+    `${PAD},${H}`,
+  ].join(' ');
+
+  const strokeColor = up ? 'hsl(150 80% 50%)' : 'hsl(350 90% 60%)';
+
+  const loadHistory = async (days: number) => {
+    setChartLoading(true);
+    try {
+      const end = new Date().toISOString().split('T')[0];
+      const start = new Date(Date.now() - days * 24 * 3600 * 1000).toISOString().split('T')[0];
+      const res = await fetch(
+        `https://api.coinpaprika.com/v1/coins/${coin.id}/ohlcv/historical?start=${start}&end=${end}`,
+      );
+      const data: Array<{ close: number }> = await res.json();
+      if (Array.isArray(data) && data.length > 0) {
+        setHistory(data.map((d) => d.close));
+      }
+    } catch {
+      /* оставляем текущие данные */
+    } finally {
+      setChartLoading(false);
+    }
+  };
+
+  const handlePeriod = (days: number) => {
+    setPeriod(days);
+    loadHistory(days);
+  };
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
@@ -169,10 +205,18 @@ const CoinModal = ({
     return () => window.removeEventListener('keydown', onKey);
   }, [onClose]);
 
-  const fmt = (n: number) =>
+  // Если при открытии история пустая — загружаем 7Д
+  useEffect(() => {
+    if (detail.history.length === 0) loadHistory(7);
+    else setHistory(detail.history);
+  }, [detail.coin.id]);
+
+  const fmtP = (n: number) =>
     n >= 1
       ? n.toLocaleString('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
       : n.toFixed(4);
+
+  const periodLabel = PERIODS.find((p) => p.days === period)?.label ?? '7Д';
 
   return (
     <div
@@ -180,14 +224,14 @@ const CoinModal = ({
       onClick={onClose}
     >
       <div
-        className="glass rounded-3xl w-full max-w-lg shadow-2xl animate-fade-up"
+        className="glass rounded-3xl w-full max-w-lg shadow-2xl animate-fade-up overflow-y-auto max-h-[95vh]"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
         <div className="flex items-center justify-between p-6 pb-4">
           <div className="flex items-center gap-3">
             <span
-              className="grid place-items-center w-12 h-12 rounded-2xl"
+              className="grid place-items-center w-12 h-12 rounded-2xl flex-shrink-0"
               style={{ background: `${coin.color}22` }}
             >
               <Icon name={coin.icon} size={26} style={{ color: coin.color }} />
@@ -203,7 +247,7 @@ const CoinModal = ({
           </div>
           <button
             onClick={onClose}
-            className="grid place-items-center w-9 h-9 rounded-xl bg-secondary/60 hover:bg-secondary transition-colors text-muted-foreground"
+            className="grid place-items-center w-9 h-9 rounded-xl bg-secondary/60 hover:bg-secondary transition-colors text-muted-foreground flex-shrink-0"
           >
             <Icon name="X" size={18} />
           </button>
@@ -211,57 +255,78 @@ const CoinModal = ({
 
         {/* Price */}
         <div className="px-6 pb-4 flex items-end gap-3">
-          <div className="font-display text-4xl font-extrabold">${fmt(coin.price)}</div>
+          <div className="font-display text-4xl font-extrabold">${fmtP(coin.price)}</div>
           <span
             className={`text-sm font-semibold px-2.5 py-1 rounded-lg mb-1 ${
-              up ? 'text-success bg-success/10' : 'text-destructive bg-destructive/10'
+              coin.change >= 0 ? 'text-success bg-success/10' : 'text-destructive bg-destructive/10'
             }`}
           >
-            {up ? '+' : ''}{coin.change.toFixed(2)}% за 24ч
+            {coin.change >= 0 ? '+' : ''}{coin.change.toFixed(2)}% за 24ч
           </span>
         </div>
 
         {/* Chart */}
-        <div className="px-6 pb-4">
+        <div className="px-6 pb-2">
+          {/* Period switcher */}
+          <div className="flex items-center gap-2 mb-3">
+            {PERIODS.map((p) => (
+              <button
+                key={p.days}
+                onClick={() => handlePeriod(p.days)}
+                className={`px-4 py-1.5 rounded-lg text-sm font-semibold transition-colors ${
+                  period === p.days
+                    ? 'bg-gradient-to-r from-primary to-accent text-background'
+                    : 'bg-secondary/50 text-muted-foreground hover:text-foreground'
+                }`}
+              >
+                {p.label}
+              </button>
+            ))}
+            {chartLoading && (
+              <Icon name="Loader" size={15} className="animate-spin text-muted-foreground ml-1" />
+            )}
+          </div>
+
           <div className="rounded-2xl bg-secondary/30 overflow-hidden">
-            {history.length > 1 ? (
+            {!chartLoading && history.length > 1 ? (
               <svg viewBox={`0 0 ${W} ${H}`} className="w-full" preserveAspectRatio="none">
                 <defs>
                   <linearGradient id="chartFill" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor={up ? 'hsl(150 80% 50%)' : 'hsl(350 90% 60%)'} stopOpacity="0.3" />
-                    <stop offset="100%" stopColor={up ? 'hsl(150 80% 50%)' : 'hsl(350 90% 60%)'} stopOpacity="0" />
+                    <stop offset="0%" stopColor={strokeColor} stopOpacity="0.25" />
+                    <stop offset="100%" stopColor={strokeColor} stopOpacity="0" />
                   </linearGradient>
                 </defs>
-                <polygon points={fill} fill="url(#chartFill)" />
+                <polygon points={fillPts} fill="url(#chartFill)" />
                 <polyline
                   points={pts}
                   fill="none"
-                  stroke={up ? 'hsl(150 80% 50%)' : 'hsl(350 90% 60%)'}
+                  stroke={strokeColor}
                   strokeWidth="2"
                   strokeLinecap="round"
                   strokeLinejoin="round"
                 />
               </svg>
             ) : (
-              <div className="h-[120px] flex items-center justify-center text-muted-foreground text-sm">
-                <Icon name="Loader" size={18} className="animate-spin mr-2" /> Загрузка графика…
+              <div className="h-[130px] flex items-center justify-center text-muted-foreground text-sm">
+                <Icon name="Loader" size={18} className="animate-spin mr-2" />
+                Загрузка графика…
               </div>
             )}
           </div>
-          <div className="flex justify-between text-xs text-muted-foreground mt-1 px-1">
-            <span>7 дней назад</span>
+          <div className="flex justify-between text-xs text-muted-foreground mt-1.5 px-1">
+            <span>{periodLabel} назад</span>
             <span>Сейчас</span>
           </div>
         </div>
 
         {/* Stats */}
-        <div className="grid grid-cols-2 gap-3 px-6 pb-5">
+        <div className="grid grid-cols-2 gap-3 px-6 py-4">
           {[
-            { label: 'Макс. 24ч', value: `$${fmt(high24h)}`, tone: 'text-success' },
-            { label: 'Мин. 24ч', value: `$${fmt(low24h)}`, tone: 'text-destructive' },
+            { label: 'Макс. 24ч', value: `$${fmtP(high24h)}`, tone: 'text-success' },
+            { label: 'Мин. 24ч', value: `$${fmtP(low24h)}`, tone: 'text-destructive' },
             { label: 'Капитализация', value: fmtBig(marketCap), tone: 'text-foreground' },
             { label: 'Объём 24ч', value: fmtBig(volume24h), tone: 'text-foreground' },
-            { label: 'ATH', value: `$${fmt(ath)}`, tone: 'text-accent' },
+            { label: 'ATH', value: `$${fmtP(ath)}`, tone: 'text-accent' },
             { label: 'Откат от ATH', value: `${(((coin.price - ath) / ath) * 100).toFixed(1)}%`, tone: 'text-muted-foreground' },
           ].map((s) => (
             <div key={s.label} className="rounded-xl bg-secondary/40 px-4 py-3">
