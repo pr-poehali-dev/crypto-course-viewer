@@ -181,6 +181,7 @@ const Index = () => {
   const [newsLoading, setNewsLoading] = useState(true);
   const [market, setMarket] = useState<MarketData | null>(null);
   const [marketLoading, setMarketLoading] = useState(true);
+  const [mobileOpen, setMobileOpen] = useState(false);
   const pricesRef = useRef(prices);
   pricesRef.current = prices;
 
@@ -420,6 +421,53 @@ const Index = () => {
         </div>
       )}
 
+      {/* MOBILE MENU */}
+      {mobileOpen && (
+        <div
+          className="fixed inset-0 z-[80] bg-background/80 backdrop-blur-sm lg:hidden"
+          onClick={() => setMobileOpen(false)}
+        >
+          <div
+            className="absolute top-0 left-0 bottom-0 w-72 glass flex flex-col pt-20 pb-8 px-5 shadow-2xl border-r border-border"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center gap-2 font-display font-extrabold text-lg mb-8">
+              <span className="grid place-items-center w-8 h-8 rounded-xl bg-gradient-to-br from-primary to-accent glow">
+                <Icon name="Activity" size={17} className="text-background" />
+              </span>
+              Crypto<span className="text-gradient">Pulse</span>
+            </div>
+            <nav className="flex flex-col gap-1 flex-1">
+              {NAV.map((n) => (
+                <button
+                  key={n.id}
+                  onClick={() => { scrollTo(n.id); setMobileOpen(false); }}
+                  className={`flex items-center gap-3 px-4 py-3 rounded-xl text-left text-sm font-medium transition-colors ${
+                    active === n.id
+                      ? 'bg-primary/15 text-primary'
+                      : 'text-muted-foreground hover:text-foreground hover:bg-secondary/50'
+                  }`}
+                >
+                  {n.label}
+                </button>
+              ))}
+            </nav>
+            <button
+              onClick={() => { setShowAlerts(true); setMobileOpen(false); }}
+              className="relative flex items-center gap-3 px-4 py-3 rounded-xl bg-gradient-to-r from-primary to-accent text-background font-semibold text-sm"
+            >
+              <Icon name="Bell" size={17} />
+              Уведомления
+              {activeAlerts.length > 0 && (
+                <span className="ml-auto w-5 h-5 rounded-full bg-destructive/90 text-white text-[10px] font-bold grid place-items-center">
+                  {activeAlerts.length}
+                </span>
+              )}
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* NAV */}
       <header className="fixed top-0 inset-x-0 z-50 glass">
         <div className="container flex items-center justify-between h-16">
@@ -442,18 +490,39 @@ const Index = () => {
               </button>
             ))}
           </nav>
-          <Button
-            onClick={() => setShowAlerts((v) => !v)}
-            className="relative rounded-xl bg-gradient-to-r from-primary to-accent text-background font-semibold hover:opacity-90"
-          >
-            <Icon name="Bell" size={16} />
-            Уведомления
-            {activeAlerts.length > 0 && (
-              <span className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-destructive text-white text-[10px] font-bold grid place-items-center">
-                {activeAlerts.length}
-              </span>
-            )}
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              onClick={() => setShowAlerts((v) => !v)}
+              className="relative hidden sm:flex rounded-xl bg-gradient-to-r from-primary to-accent text-background font-semibold hover:opacity-90"
+            >
+              <Icon name="Bell" size={16} />
+              Уведомления
+              {activeAlerts.length > 0 && (
+                <span className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-destructive text-white text-[10px] font-bold grid place-items-center">
+                  {activeAlerts.length}
+                </span>
+              )}
+            </Button>
+            {/* Bell icon only on mobile */}
+            <button
+              onClick={() => setShowAlerts((v) => !v)}
+              className="relative sm:hidden grid place-items-center w-10 h-10 rounded-xl bg-secondary/60 hover:bg-secondary transition-colors"
+            >
+              <Icon name="Bell" size={19} className="text-foreground" />
+              {activeAlerts.length > 0 && (
+                <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-destructive text-white text-[9px] font-bold grid place-items-center">
+                  {activeAlerts.length}
+                </span>
+              )}
+            </button>
+            {/* Burger */}
+            <button
+              onClick={() => setMobileOpen((v) => !v)}
+              className="lg:hidden grid place-items-center w-10 h-10 rounded-xl bg-secondary/60 hover:bg-secondary transition-colors"
+            >
+              <Icon name={mobileOpen ? 'X' : 'Menu'} size={20} className="text-foreground" />
+            </button>
+          </div>
         </div>
       </header>
 
