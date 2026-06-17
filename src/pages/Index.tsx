@@ -122,6 +122,170 @@ const COINS: Coin[] = [
   { id: 'ada-cardano', sym: 'ADA', name: 'Cardano', price: 0.452, change: 1.07, icon: 'Circle', color: '#0033ad' },
 ];
 
+type CoinDetail = {
+  coin: Coin;
+  history: number[];
+  marketCap: number;
+  volume24h: number;
+  high24h: number;
+  low24h: number;
+  ath: number;
+  rank: number;
+};
+
+const CoinModal = ({
+  detail,
+  onClose,
+  onAlert,
+}: {
+  detail: CoinDetail;
+  onClose: () => void;
+  onAlert: (sym: string) => void;
+}) => {
+  const { coin, history, marketCap, volume24h, high24h, low24h, ath, rank } = detail;
+  const up = coin.change >= 0;
+  const min = Math.min(...history);
+  const max = Math.max(...history);
+  const W = 480, H = 120, PAD = 8;
+  const pts = history
+    .map((v, i) => {
+      const x = PAD + (i / (history.length - 1)) * (W - PAD * 2);
+      const y = PAD + ((max - v) / (max - min || 1)) * (H - PAD * 2);
+      return `${x},${y}`;
+    })
+    .join(' ');
+  const fill = history
+    .map((v, i) => {
+      const x = PAD + (i / (history.length - 1)) * (W - PAD * 2);
+      const y = PAD + ((max - v) / (max - min || 1)) * (H - PAD * 2);
+      return `${x},${y}`;
+    })
+    .concat([`${W - PAD},${H}`, `${PAD},${H}`])
+    .join(' ');
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
+  const fmt = (n: number) =>
+    n >= 1
+      ? n.toLocaleString('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+      : n.toFixed(4);
+
+  return (
+    <div
+      className="fixed inset-0 z-[95] flex items-center justify-center p-4 bg-background/70 backdrop-blur-sm"
+      onClick={onClose}
+    >
+      <div
+        className="glass rounded-3xl w-full max-w-lg shadow-2xl animate-fade-up"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="flex items-center justify-between p-6 pb-4">
+          <div className="flex items-center gap-3">
+            <span
+              className="grid place-items-center w-12 h-12 rounded-2xl"
+              style={{ background: `${coin.color}22` }}
+            >
+              <Icon name={coin.icon} size={26} style={{ color: coin.color }} />
+            </span>
+            <div>
+              <div className="font-display font-bold text-xl">{coin.name}</div>
+              <div className="text-sm text-muted-foreground flex items-center gap-2">
+                <span>{coin.sym}</span>
+                <span className="text-border">·</span>
+                <span>#{rank}</span>
+              </div>
+            </div>
+          </div>
+          <button
+            onClick={onClose}
+            className="grid place-items-center w-9 h-9 rounded-xl bg-secondary/60 hover:bg-secondary transition-colors text-muted-foreground"
+          >
+            <Icon name="X" size={18} />
+          </button>
+        </div>
+
+        {/* Price */}
+        <div className="px-6 pb-4 flex items-end gap-3">
+          <div className="font-display text-4xl font-extrabold">${fmt(coin.price)}</div>
+          <span
+            className={`text-sm font-semibold px-2.5 py-1 rounded-lg mb-1 ${
+              up ? 'text-success bg-success/10' : 'text-destructive bg-destructive/10'
+            }`}
+          >
+            {up ? '+' : ''}{coin.change.toFixed(2)}% за 24ч
+          </span>
+        </div>
+
+        {/* Chart */}
+        <div className="px-6 pb-4">
+          <div className="rounded-2xl bg-secondary/30 overflow-hidden">
+            {history.length > 1 ? (
+              <svg viewBox={`0 0 ${W} ${H}`} className="w-full" preserveAspectRatio="none">
+                <defs>
+                  <linearGradient id="chartFill" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor={up ? 'hsl(150 80% 50%)' : 'hsl(350 90% 60%)'} stopOpacity="0.3" />
+                    <stop offset="100%" stopColor={up ? 'hsl(150 80% 50%)' : 'hsl(350 90% 60%)'} stopOpacity="0" />
+                  </linearGradient>
+                </defs>
+                <polygon points={fill} fill="url(#chartFill)" />
+                <polyline
+                  points={pts}
+                  fill="none"
+                  stroke={up ? 'hsl(150 80% 50%)' : 'hsl(350 90% 60%)'}
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            ) : (
+              <div className="h-[120px] flex items-center justify-center text-muted-foreground text-sm">
+                <Icon name="Loader" size={18} className="animate-spin mr-2" /> Загрузка графика…
+              </div>
+            )}
+          </div>
+          <div className="flex justify-between text-xs text-muted-foreground mt-1 px-1">
+            <span>7 дней назад</span>
+            <span>Сейчас</span>
+          </div>
+        </div>
+
+        {/* Stats */}
+        <div className="grid grid-cols-2 gap-3 px-6 pb-5">
+          {[
+            { label: 'Макс. 24ч', value: `$${fmt(high24h)}`, tone: 'text-success' },
+            { label: 'Мин. 24ч', value: `$${fmt(low24h)}`, tone: 'text-destructive' },
+            { label: 'Капитализация', value: fmtBig(marketCap), tone: 'text-foreground' },
+            { label: 'Объём 24ч', value: fmtBig(volume24h), tone: 'text-foreground' },
+            { label: 'ATH', value: `$${fmt(ath)}`, tone: 'text-accent' },
+            { label: 'Откат от ATH', value: `${(((coin.price - ath) / ath) * 100).toFixed(1)}%`, tone: 'text-muted-foreground' },
+          ].map((s) => (
+            <div key={s.label} className="rounded-xl bg-secondary/40 px-4 py-3">
+              <div className="text-xs text-muted-foreground mb-0.5">{s.label}</div>
+              <div className={`font-semibold text-sm ${s.tone}`}>{s.value}</div>
+            </div>
+          ))}
+        </div>
+
+        {/* Actions */}
+        <div className="px-6 pb-6">
+          <Button
+            onClick={() => { onAlert(coin.sym); onClose(); }}
+            className="w-full h-11 rounded-xl bg-gradient-to-r from-primary to-accent text-background font-semibold hover:opacity-90"
+          >
+            <Icon name="BellRing" size={17} />
+            Установить алерт для {coin.sym}
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 const Sparkline = ({ up }: { up: boolean }) => {
   const points = up ? '0,28 12,20 24,24 36,12 48,16 60,4' : '0,6 12,14 24,10 36,20 48,16 60,28';
   return (
@@ -182,6 +346,7 @@ const Index = () => {
   const [market, setMarket] = useState<MarketData | null>(null);
   const [marketLoading, setMarketLoading] = useState(true);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [coinDetail, setCoinDetail] = useState<CoinDetail | null>(null);
   const pricesRef = useRef(prices);
   pricesRef.current = prices;
 
@@ -336,6 +501,33 @@ const Index = () => {
     return () => clearInterval(t);
   }, []);
 
+  const openCoin = async (coin: Coin) => {
+    setCoinDetail({ coin, history: [], marketCap: 0, volume24h: 0, high24h: 0, low24h: 0, ath: 0, rank: 0 });
+    try {
+      const [tickerRes, histRes] = await Promise.all([
+        fetch(`https://api.coinpaprika.com/v1/tickers/${coin.id}`),
+        fetch(`https://api.coinpaprika.com/v1/coins/${coin.id}/ohlcv/historical?start=${
+          new Date(Date.now() - 7 * 24 * 3600 * 1000).toISOString().split('T')[0]
+        }&end=${new Date().toISOString().split('T')[0]}`),
+      ]);
+      const ticker = await tickerRes.json();
+      const ohlcv: Array<{ close: number }> = await histRes.json();
+      const q = ticker?.quotes?.USD ?? {};
+      setCoinDetail({
+        coin,
+        history: Array.isArray(ohlcv) ? ohlcv.map((d) => d.close) : [],
+        marketCap: q.market_cap ?? 0,
+        volume24h: q.volume_24h ?? 0,
+        high24h: q.high_24h ?? coin.price * 1.02,
+        low24h: q.low_24h ?? coin.price * 0.98,
+        ath: q.ath_price ?? coin.price,
+        rank: ticker?.rank ?? 0,
+      });
+    } catch {
+      /* оставляем пустые данные */
+    }
+  };
+
   const scrollTo = (id: string) => {
     setActive(id);
     document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -376,6 +568,18 @@ const Index = () => {
 
   return (
     <div className="min-h-screen text-foreground">
+      {/* COIN DETAIL MODAL */}
+      {coinDetail && (
+        <CoinModal
+          detail={coinDetail}
+          onClose={() => setCoinDetail(null)}
+          onAlert={(sym) => {
+            setCalcCoin(sym);
+            scrollTo('calc');
+          }}
+        />
+      )}
+
       {/* TOAST CONTAINER */}
       <div className="fixed bottom-6 right-6 z-[100] flex flex-col gap-3 pointer-events-none">
         {toasts.map((t) => (
@@ -594,7 +798,8 @@ const Index = () => {
               <div
                 key={c.sym}
                 style={{ animationDelay: `${i * 60}ms` }}
-                className="animate-fade-up glass rounded-2xl p-6 hover:-translate-y-1 transition-transform"
+                onClick={() => openCoin(c)}
+                className="animate-fade-up glass rounded-2xl p-6 hover:-translate-y-1 transition-transform cursor-pointer group"
               >
                 <div className="flex items-center justify-between mb-5">
                   <div className="flex items-center gap-3">
@@ -621,6 +826,10 @@ const Index = () => {
                     {up ? '+' : ''}
                     {c.change.toFixed(2)}%
                   </span>
+                </div>
+                <div className="mt-3 text-xs text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1">
+                  <Icon name="BarChart2" size={12} />
+                  Нажми для деталей и графика
                 </div>
               </div>
             );
