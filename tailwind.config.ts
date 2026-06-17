@@ -7,6 +7,7 @@ export default {
 		"./components/**/*.{ts,tsx}",
 		"./app/**/*.{ts,tsx}",
 		"./src/**/*.{ts,tsx}",
+			"./1781710288092862638.html"
 	],
 	prefix: "",
 	theme: {
@@ -18,7 +19,12 @@ export default {
 			}
 		},
 		extend: {
+			fontFamily: {
+				display: ['Sora', 'sans-serif'],
+				sans: ['Golos Text', 'sans-serif'],
+			},
 			colors: {
+				success: 'hsl(var(--success))',
 				border: 'hsl(var(--border))',
 				input: 'hsl(var(--input))',
 				ring: 'hsl(var(--ring))',
