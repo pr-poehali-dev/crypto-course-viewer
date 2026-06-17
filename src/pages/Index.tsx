@@ -13,6 +13,20 @@ type NewsItem = {
 const NEWS_URL =
   'https://api.rss2json.com/v1/api.json?rss_url=https%3A%2F%2Fwww.coindesk.com%2Farc%2Foutboundfeeds%2Frss%2F&count=6';
 
+// Fear & Greed Index — alternative.me
+const FEAR_URL = 'https://api.alternative.me/fng/?limit=1';
+// Глобальные данные рынка — CoinGecko
+const GLOBAL_URL = 'https://api.coingecko.com/api/v3/global';
+
+type MarketData = {
+  fear: number;
+  fearLabel: string;
+  btcDominance: number;
+  totalVolume: number;
+  marketCap: number;
+  marketCapChange: number;
+};
+
 const NEWS_ICONS = ['TrendingUp', 'Zap', 'Scale', 'Globe', 'BarChart2', 'Newspaper'];
 
 function timeAgo(dateStr: string): string {
@@ -23,6 +37,21 @@ function timeAgo(dateStr: string): string {
   const h = Math.floor(m / 60);
   if (h < 24) return `${h} ч назад`;
   return `${Math.floor(h / 24)} д назад`;
+}
+
+function fmtBig(n: number): string {
+  if (n >= 1e12) return `$${(n / 1e12).toFixed(2)}T`;
+  if (n >= 1e9) return `$${(n / 1e9).toFixed(1)}B`;
+  if (n >= 1e6) return `$${(n / 1e6).toFixed(0)}M`;
+  return `$${n.toLocaleString('ru-RU')}`;
+}
+
+function fearColor(val: number): string {
+  if (val <= 25) return 'text-destructive';
+  if (val <= 45) return 'text-orange-400';
+  if (val <= 55) return 'text-yellow-400';
+  if (val <= 75) return 'text-success';
+  return 'text-emerald-400';
 }
 
 function extractTag(title: string): string {
@@ -154,6 +183,8 @@ const Index = () => {
   const [showAlerts, setShowAlerts] = useState(false);
   const [news, setNews] = useState<NewsItem[]>([]);
   const [newsLoading, setNewsLoading] = useState(true);
+  const [market, setMarket] = useState<MarketData | null>(null);
+  const [marketLoading, setMarketLoading] = useState(true);
   const pricesRef = useRef(prices);
   pricesRef.current = prices;
 
@@ -235,6 +266,45 @@ const Index = () => {
       return updated;
     });
   }, [prices]);
+
+  useEffect(() => {
+    const fetchMarket = async () => {
+      setMarketLoading(true);
+      try {
+        const [fearRes, globalRes] = await Promise.all([
+          fetch(FEAR_URL),
+          fetch(GLOBAL_URL),
+        ]);
+        const fearData = await fearRes.json();
+        const globalData = await globalRes.json();
+
+        const fearVal = parseInt(fearData?.data?.[0]?.value ?? '50', 10);
+        const fearLabel = fearData?.data?.[0]?.value_classification ?? 'Нейтрально';
+
+        const g = globalData?.data ?? {};
+        const btcDom = parseFloat(g?.market_cap_percentage?.btc ?? 0);
+        const totalVol = parseFloat(g?.total_volume?.usd ?? 0);
+        const marketCap = parseFloat(g?.total_market_cap?.usd ?? 0);
+        const marketCapChange = parseFloat(g?.market_cap_change_percentage_24h_usd ?? 0);
+
+        setMarket({
+          fear: fearVal,
+          fearLabel,
+          btcDominance: btcDom,
+          totalVolume: totalVol,
+          marketCap,
+          marketCapChange,
+        });
+      } catch {
+        /* оставляем null */
+      } finally {
+        setMarketLoading(false);
+      }
+    };
+    fetchMarket();
+    const t = setInterval(fetchMarket, 5 * 60 * 1000);
+    return () => clearInterval(t);
+  }, []);
 
   useEffect(() => {
     const fetchNews = async () => {
@@ -534,24 +604,76 @@ const Index = () => {
 
       {/* ANALYSIS */}
       <Section id="analysis" eyebrow="Анализ" title="Настроение рынка">
-        <div className="grid md:grid-cols-3 gap-5">
-          {[
-            { label: 'Индекс страха и жадности', value: '72', sub: 'Жадность', icon: 'Gauge', tone: 'text-success' },
-            { label: 'Доминирование BTC', value: '54.2%', sub: '+0.8% за неделю', icon: 'PieChart', tone: 'text-accent' },
-            { label: 'Объём торгов 24ч', value: '$98.4B', sub: '+12.3%', icon: 'BarChart3', tone: 'text-primary' },
-          ].map((s, i) => (
-            <div
-              key={i}
-              style={{ animationDelay: `${i * 80}ms` }}
-              className="animate-fade-up glass rounded-2xl p-7"
-            >
-              <Icon name={s.icon} size={24} className={`${s.tone} mb-4`} />
-              <div className="text-sm text-muted-foreground mb-1">{s.label}</div>
-              <div className="font-display text-4xl font-extrabold mb-1">{s.value}</div>
-              <div className={`text-sm ${s.tone}`}>{s.sub}</div>
+        {marketLoading ? (
+          <div className="grid md:grid-cols-3 gap-5">
+            {[0, 1, 2].map((i) => (
+              <div key={i} className="glass rounded-2xl p-7 animate-pulse">
+                <div className="w-8 h-8 rounded-lg bg-secondary mb-4" />
+                <div className="h-3 w-32 rounded bg-secondary mb-3" />
+                <div className="h-10 w-24 rounded bg-secondary mb-2" />
+                <div className="h-3 w-20 rounded bg-secondary" />
+              </div>
+            ))}
+          </div>
+        ) : market ? (
+          <div className="grid md:grid-cols-3 gap-5">
+            {/* Fear & Greed */}
+            <div className="animate-fade-up glass rounded-2xl p-7">
+              <Icon name="Gauge" size={24} className={`${fearColor(market.fear)} mb-4`} />
+              <div className="text-sm text-muted-foreground mb-1">Индекс страха и жадности</div>
+              <div className={`font-display text-4xl font-extrabold mb-1 ${fearColor(market.fear)}`}>
+                {market.fear}
+              </div>
+              <div className={`text-sm font-medium ${fearColor(market.fear)}`}>
+                {market.fearLabel}
+              </div>
+              {/* шкала */}
+              <div className="mt-4 h-2 rounded-full bg-secondary overflow-hidden">
+                <div
+                  className="h-full rounded-full bg-gradient-to-r from-destructive via-yellow-400 to-success transition-all duration-700"
+                  style={{ width: `${market.fear}%` }}
+                />
+              </div>
             </div>
-          ))}
-        </div>
+            {/* BTC Dominance */}
+            <div className="animate-fade-up glass rounded-2xl p-7" style={{ animationDelay: '80ms' }}>
+              <Icon name="PieChart" size={24} className="text-accent mb-4" />
+              <div className="text-sm text-muted-foreground mb-1">Доминирование BTC</div>
+              <div className="font-display text-4xl font-extrabold mb-1">
+                {market.btcDominance.toFixed(1)}%
+              </div>
+              <div className="text-sm text-accent">
+                Остальные {(100 - market.btcDominance).toFixed(1)}% — альткоины
+              </div>
+              <div className="mt-4 h-2 rounded-full bg-secondary overflow-hidden">
+                <div
+                  className="h-full rounded-full bg-accent transition-all duration-700"
+                  style={{ width: `${market.btcDominance}%` }}
+                />
+              </div>
+            </div>
+            {/* Volume & Market Cap */}
+            <div className="animate-fade-up glass rounded-2xl p-7" style={{ animationDelay: '160ms' }}>
+              <Icon name="BarChart3" size={24} className="text-primary mb-4" />
+              <div className="text-sm text-muted-foreground mb-1">Объём торгов 24ч</div>
+              <div className="font-display text-4xl font-extrabold mb-1">
+                {fmtBig(market.totalVolume)}
+              </div>
+              <div className="text-sm text-muted-foreground mt-3 mb-0.5">Капитализация рынка</div>
+              <div className="font-semibold text-lg">
+                {fmtBig(market.marketCap)}{' '}
+                <span className={market.marketCapChange >= 0 ? 'text-success text-sm' : 'text-destructive text-sm'}>
+                  {market.marketCapChange >= 0 ? '+' : ''}{market.marketCapChange.toFixed(2)}%
+                </span>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="glass rounded-2xl p-10 text-center text-muted-foreground">
+            <Icon name="AlertCircle" size={32} className="mx-auto mb-3 opacity-40" />
+            Не удалось загрузить данные. Попробуйте позже.
+          </div>
+        )}
       </Section>
 
       {/* COMPARE */}
