@@ -10,13 +10,14 @@ type NewsItem = {
   tag: string;
 };
 
-const NEWS_URL =
-  'https://api.rss2json.com/v1/api.json?rss_url=https%3A%2F%2Fwww.coindesk.com%2Farc%2Foutboundfeeds%2Frss%2F&count=6';
-
+// Новости — Blockchair (публичный, без ключа)
+const NEWS_URL = 'https://api.blockchair.com/news';
 // Fear & Greed Index — alternative.me
 const FEAR_URL = 'https://api.alternative.me/fng/?limit=1';
-// Глобальные данные рынка — CoinGecko
-const GLOBAL_URL = 'https://api.coingecko.com/api/v3/global';
+// Глобальные данные рынка — Coinpaprika (без ключа, CORS открыт)
+const GLOBAL_URL = 'https://api.coinpaprika.com/v1/global';
+// Котировки — Coinpaprika
+const PAPRIKA_URL = 'https://api.coinpaprika.com/v1/tickers?limit=20';
 
 type MarketData = {
   fear: number;
@@ -113,18 +114,13 @@ type Toast = {
 };
 
 const COINS: Coin[] = [
-  { id: 'bitcoin', sym: 'BTC', name: 'Bitcoin', price: 67234.12, change: 2.41, icon: 'Bitcoin', color: '#f7931a' },
-  { id: 'ethereum', sym: 'ETH', name: 'Ethereum', price: 3521.88, change: 4.12, icon: 'Gem', color: '#627eea' },
-  { id: 'solana', sym: 'SOL', name: 'Solana', price: 178.34, change: -1.85, icon: 'Sun', color: '#14f195' },
-  { id: 'binancecoin', sym: 'BNB', name: 'BNB', price: 612.5, change: 0.94, icon: 'Hexagon', color: '#f3ba2f' },
-  { id: 'ripple', sym: 'XRP', name: 'Ripple', price: 0.624, change: -3.21, icon: 'Droplet', color: '#23292f' },
-  { id: 'cardano', sym: 'ADA', name: 'Cardano', price: 0.452, change: 1.07, icon: 'Circle', color: '#0033ad' },
+  { id: 'btc-bitcoin', sym: 'BTC', name: 'Bitcoin', price: 67234.12, change: 2.41, icon: 'Bitcoin', color: '#f7931a' },
+  { id: 'eth-ethereum', sym: 'ETH', name: 'Ethereum', price: 3521.88, change: 4.12, icon: 'Gem', color: '#627eea' },
+  { id: 'sol-solana', sym: 'SOL', name: 'Solana', price: 178.34, change: -1.85, icon: 'Sun', color: '#14f195' },
+  { id: 'bnb-binance-coin', sym: 'BNB', name: 'BNB', price: 612.5, change: 0.94, icon: 'Hexagon', color: '#f3ba2f' },
+  { id: 'xrp-xrp', sym: 'XRP', name: 'Ripple', price: 0.624, change: -3.21, icon: 'Droplet', color: '#00aae4' },
+  { id: 'ada-cardano', sym: 'ADA', name: 'Cardano', price: 0.452, change: 1.07, icon: 'Circle', color: '#0033ad' },
 ];
-
-const CG_URL =
-  'https://api.coingecko.com/api/v3/simple/price?ids=' +
-  COINS.map((c) => c.id).join(',') +
-  '&vs_currencies=usd&include_24hr_change=true';
 
 const Sparkline = ({ up }: { up: boolean }) => {
   const points = up ? '0,28 12,20 24,24 36,12 48,16 60,4' : '0,6 12,14 24,10 36,20 48,16 60,28';
@@ -193,18 +189,19 @@ const Index = () => {
 
     const fetchPrices = async () => {
       try {
-        const res = await fetch(CG_URL);
+        const res = await fetch(PAPRIKA_URL);
         if (!res.ok) return;
-        const data = await res.json();
+        const data: Array<{ id: string; quotes: { USD: { price: number; percent_change_24h: number } } }> = await res.json();
         if (cancelled) return;
+        const byId = Object.fromEntries(data.map((d) => [d.id, d]));
         setPrices((prev) =>
           prev.map((c) => {
-            const d = data[c.id];
+            const d = byId[c.id];
             if (!d) return c;
             return {
               ...c,
-              price: d.usd ?? c.price,
-              change: +(d.usd_24h_change ?? c.change).toFixed(2),
+              price: d.quotes.USD.price,
+              change: +d.quotes.USD.percent_change_24h.toFixed(2),
             };
           }),
         );
@@ -281,11 +278,12 @@ const Index = () => {
         const fearVal = parseInt(fearData?.data?.[0]?.value ?? '50', 10);
         const fearLabel = fearData?.data?.[0]?.value_classification ?? 'Нейтрально';
 
-        const g = globalData?.data ?? {};
-        const btcDom = parseFloat(g?.market_cap_percentage?.btc ?? 0);
-        const totalVol = parseFloat(g?.total_volume?.usd ?? 0);
-        const marketCap = parseFloat(g?.total_market_cap?.usd ?? 0);
-        const marketCapChange = parseFloat(g?.market_cap_change_percentage_24h_usd ?? 0);
+        // Coinpaprika /v1/global
+        const g = globalData ?? {};
+        const btcDom = parseFloat(g?.bitcoin_dominance_percentage ?? 0);
+        const totalVol = parseFloat(g?.volume_24h_usd ?? 0);
+        const marketCap = parseFloat(g?.market_cap_usd ?? 0);
+        const marketCapChange = parseFloat(g?.market_cap_change_24h ?? 0);
 
         setMarket({
           fear: fearVal,
@@ -312,16 +310,20 @@ const Index = () => {
       try {
         const res = await fetch(NEWS_URL);
         const data = await res.json();
-        if (data.status === 'ok' && Array.isArray(data.items)) {
-          setNews(
-            data.items.slice(0, 6).map((item: { title: string; link: string; pubDate: string }) => ({
-              title: item.title,
-              link: item.link,
-              pubDate: item.pubDate,
-              tag: extractTag(item.title),
-            })),
-          );
-        }
+        // Blockchair возвращает { data: [...] }
+        const items: Array<{ title: string; link: string; time: string; language?: string; tags?: string }> =
+          Array.isArray(data?.data) ? data.data : [];
+        // берём английские или любые если мало
+        const en = items.filter((i) => !i.language || i.language === 'en');
+        const pool = en.length >= 6 ? en : items;
+        setNews(
+          pool.slice(0, 6).map((item) => ({
+            title: item.title,
+            link: item.link,
+            pubDate: item.time,
+            tag: item.tags ? item.tags.split(',')[0].trim() : extractTag(item.title),
+          })),
+        );
       } catch {
         /* оставляем пустой список */
       } finally {
